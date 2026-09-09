@@ -1,0 +1,27 @@
+{
+  "_doc": "Permission policy for session/request_permission. Rules are JS regexes tested against the shell command string (kind=execute). Order: deny first, then allow, else park for a human/driver answer. Non-execute tool kinds (read, edit, search, fetch...) are governed by `nonExecute`. A workspace can add <workspace>/.acp-bridge/policy.json; its arrays are appended to these.",
+  "execute": {
+    "deny": [
+      "^\\s*(rm|rmdir|del|erase|Remove-Item|rd)\\b",
+      "^\\s*format\\b",
+      "^\\s*(curl|wget|Invoke-WebRequest|iwr|irm)\\b",
+      "\\|\\s*(sh|bash|pwsh|powershell|iex)\\b",
+      "^\\s*git\\s+(push|reset\\s+--hard|clean|checkout\\s+--\\s*\\.|branch\\s+-D)\\b",
+      "^\\s*(shutdown|Restart-Computer|Stop-Computer|taskkill|Stop-Process)\\b",
+      "^\\s*(sudo|runas)\\b"
+    ],
+    "allow": [
+      "^\\s*(ls|dir|pwd|cat|type|head|tail|wc|echo|hostname|whoami|date|which|where|tree)\\b",
+      "^\\s*(grep|rg|find|fd|sed\\s+-n|awk|sort|uniq|cut|diff|jq)\\b",
+      "^\\s*(mkdir|touch|cp|copy|mv|move)\\b",
+      "^\\s*git\\s+(status|diff|log|show|branch|rev-parse|ls-files|blame|stash\\s+list|remote\\s+-v|add|commit|worktree)\\b",
+      "^\\s*(node|npm|npx|pnpm|yarn|python|python3|py|pip|pytest|uv|cargo|go|dotnet|make|cmake|ninja)\\b",
+      "^\\s*(magick|ffmpeg|ffprobe|oiiotool|hython|husk)\\b"
+    ]
+  },
+  "nonExecute": {
+    "allow": true
+  },
+  "parkTimeoutMinutes": 20,
+  "parkTimeoutDecision": "reject"
+}

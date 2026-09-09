@@ -1,0 +1,6 @@
+bridge/harnesses.json
+node_modules/
+.env
+*.log
+sessions/
+*.bak-*

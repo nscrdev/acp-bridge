@@ -1,0 +1,44 @@
+{
+  "_doc": "ACP agent backends. Copy this file to harnesses.json and edit for the agent CLIs you have installed. Each entry spawns a process that speaks ACP (JSON-RPC 2.0, newline-delimited) on stdio. Fields: command + args (how to launch the ACP server), authMethod (an ACP auth method id to call after initialize, or null), modelAliases (short name -> exact model id, optional), cliConfig (a config file the bridge snapshots at connect and restores on exit, e.g. if selecting a model rewrites the CLI default; optional). Paths below are placeholders - set them to where your CLIs live. On Windows, launch .cmd/.exe wrappers via cmd.exe (see the cursor example).",
+  "default": "cursor",
+  "harnesses": {
+    "cursor": {
+      "command": "cmd.exe",
+      "args": ["/c", "PATH/TO/cursor-agent", "acp"],
+      "authMethod": "cursor_login",
+      "cliConfig": "~/.cursor/cli-config.json",
+      "modelAliases": {
+        "default-fast": "REPLACE-with-a-model-id-from: models --harness cursor"
+      },
+      "_note": "Cursor CLI. Selecting a model over ACP can rewrite the interactive CLI default, so cliConfig lets the bridge snapshot and restore it. Run `agent login` (or set an API key) first."
+    },
+    "codex": {
+      "command": "cmd.exe",
+      "args": ["/c", "npx", "-y", "@agentclientprotocol/codex-acp"],
+      "authMethod": null,
+      "modelAliases": {},
+      "_note": "OpenAI Codex CLI via the community ACP adapter. Log in with your ChatGPT account first. Some builds reject session/set_model and session/load; the bridge tolerates both and records a warning."
+    },
+    "devin": {
+      "command": "PATH/TO/devin",
+      "args": ["acp"],
+      "authMethod": null,
+      "modelAliases": {},
+      "_note": "Devin CLI (bundled with the Devin desktop app). Log in first. It loads every MCP server in your Devin config at session start, so the first turn can be slow. It uses session/set_config_option instead of session/set_model; the bridge handles that automatically."
+    },
+    "gemini": {
+      "command": "cmd.exe",
+      "args": ["/c", "npx", "-y", "@google/gemini-cli", "--experimental-acp"],
+      "authMethod": null,
+      "modelAliases": {},
+      "_note": "Gemini CLI has a built-in ACP mode. Flag name may change between versions."
+    },
+    "claude-code": {
+      "command": "cmd.exe",
+      "args": ["/c", "npx", "-y", "@zed-industries/claude-code-acp"],
+      "authMethod": null,
+      "modelAliases": {},
+      "_note": "Claude Code as an ACP agent, via the community adapter."
+    }
+  }
+}
