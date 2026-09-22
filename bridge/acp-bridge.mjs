@@ -352,18 +352,47 @@ async function connect(harness, workspace, onMessage) {
   // The launcher is cmd.exe -> powershell -> node; kill the whole tree or the
   // grandchild keeps the stdio pipes open and the caller never exits.
   const killTree = () => { try { if (process.platform === "win32") execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: "ignore" }); else child.kill("SIGTERM"); } catch {} };
-  // Cursor persists session/set_model into the user's CLI config as the new
-  // interactive default (observed 2026-09-03). Snapshot it and put it back.
+  // Some agents (Cursor) persist session/set_model into the user's CLI config
+  // as the new interactive default (observed 2026-09-03). Put it back on exit.
+  // One shared baseline per harness, with a holder list: the FIRST live bridge
+  // session snapshots the user's real default, and only the LAST one out
+  // restores it. A per-process snapshot is wrong when sessions overlap - the
+  // second session would snapshot the first one's change and "restore" that
+  // (observed 2026-09-22: two overlapping Opus 5.5 probes left the Cursor
+  // default on Opus 5.5).
   const cfgPath = harness.cliConfig ? path.resolve(harness.cliConfig.replace(/^~/, os.homedir())) : null;
-  const cfgSnapshot = cfgPath ? readJSON(cfgPath) : null;
+  const basePath = cfgPath ? path.join(STORE, "..", `cli-baseline-${harness.id}.json`) : null;
+  const liveHolders = (b) => Object.fromEntries(Object.entries(b?.holders ?? {}).filter(([pid]) => pidAlive(Number(pid))));
+  if (cfgPath) {
+    try {
+      fs.mkdirSync(path.dirname(basePath), { recursive: true });
+      let base = readJSON(basePath) ?? {};
+      const holders = liveHolders(base);
+      if (!Object.keys(holders).length) {
+        const cur = readJSON(cfgPath);
+        base = { model: cur?.model ?? null, modelParameters: cur?.modelParameters, savedAt: nowISO() };
+      }
+      base.holders = { ...holders, [process.pid]: harness.id };
+      writeJSON(basePath, base);
+    } catch (e) { process.stderr.write(`[acp-bridge] cli baseline save failed: ${e.message}\n`); }
+  }
+  let released = false;
   const restoreCliDefault = () => {
-    if (!cfgSnapshot?.model) return;
-    const cur = readJSON(cfgPath); if (!cur?.model) return;
-    if (JSON.stringify(cur.model) !== JSON.stringify(cfgSnapshot.model)) {
-      cur.model = cfgSnapshot.model;
-      if ("modelParameters" in cfgSnapshot) cur.modelParameters = cfgSnapshot.modelParameters;
-      try { fs.writeFileSync(cfgPath, JSON.stringify(cur, null, 2)); process.stderr.write(`[acp-bridge] restored CLI default model ${cfgSnapshot.model.modelId}\n`); } catch {}
-    }
+    if (!cfgPath || released) return;
+    released = true;
+    try {
+      const base = readJSON(basePath); if (!base) return;
+      const holders = liveHolders(base); delete holders[process.pid];
+      if (Object.keys(holders).length) { base.holders = holders; writeJSON(basePath, base); return; }
+      const cur = readJSON(cfgPath);
+      if (base.model && cur?.model && JSON.stringify(cur.model) !== JSON.stringify(base.model)) {
+        cur.model = base.model;
+        if (base.modelParameters !== undefined) cur.modelParameters = base.modelParameters;
+        fs.writeFileSync(cfgPath, JSON.stringify(cur, null, 2));
+        process.stderr.write(`[acp-bridge] restored CLI default model ${base.model.modelId}\n`);
+      }
+      try { fs.unlinkSync(basePath); } catch {}
+    } catch (e) { process.stderr.write(`[acp-bridge] cli restore failed: ${e.message}\n`); }
   };
   // Kill the tree first: once stdin closes, cmd.exe exits before its
   // powershell/node children do, and taskkill /T cannot follow a dead parent.
