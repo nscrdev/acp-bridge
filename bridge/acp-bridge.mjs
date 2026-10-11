@@ -263,7 +263,7 @@ function cmdStop() {
   const st = loadState(opts.name);
   postInbox(st.name, { type: "stop" });
   setTimeout(() => {
-    if (pidAlive(st.pid)) { try { execSync(`taskkill /PID ${st.pid} /T /F`, { stdio: "ignore" }); } catch {} }
+    if (pidAlive(st.pid)) { try { execSync(`taskkill /PID ${st.pid} /T /F`, { stdio: "ignore", windowsHide: true }); } catch {} }
     const s2 = loadState(st.name); s2.status = "stopped"; s2.pid = null; s2.pending = null; s2.currentTools = []; s2.liveText = ""; saveState(s2);
     console.log(`stopped ${st.name} (agent session ${st.agentSessionId ?? "-"} kept for send/resume)`);
   }, 1500);
@@ -327,7 +327,14 @@ async function cmdModels() {
 
 // -------------------------------------------------------------- ACP transport
 async function connect(harness, workspace, onMessage) {
-  const child = spawn(harness.command, harness.args, { stdio: ["pipe", "pipe", "pipe"], cwd: workspace, windowsHide: true });
+  // harness.envUnset drops inherited variables before the agent starts. Cursor
+  // needs it: MSYSTEM/EXEPATH/SHELL from a Git Bash caller make it run hooks and
+  // shell calls in bash, but it writes hook commands in PowerShell syntax, so
+  // every hook fails and every shell call is blocked (2026-09-23, see README).
+  const env = { ...process.env };
+  const unset = new Set((harness.envUnset ?? []).map(k => k.toUpperCase()));
+  for (const k of Object.keys(env)) if (unset.has(k.toUpperCase())) delete env[k];
+  const child = spawn(harness.command, harness.args, { stdio: ["pipe", "pipe", "pipe"], cwd: workspace, windowsHide: true, env });
   child.stderr.on("data", d => process.stderr.write(`[agent stderr] ${d}`));
   let nextId = 1; const pending = new Map();
   const write = (obj) => child.stdin.write(JSON.stringify(obj) + "\n");
@@ -351,7 +358,7 @@ async function connect(harness, workspace, onMessage) {
   if (harness.authMethod && authIds.includes(harness.authMethod)) await send("authenticate", { methodId: harness.authMethod });
   // The launcher is cmd.exe -> powershell -> node; kill the whole tree or the
   // grandchild keeps the stdio pipes open and the caller never exits.
-  const killTree = () => { try { if (process.platform === "win32") execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: "ignore" }); else child.kill("SIGTERM"); } catch {} };
+  const killTree = () => { try { if (process.platform === "win32") execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: "ignore", windowsHide: true }); else child.kill("SIGTERM"); } catch {} };
   // Some agents (Cursor) persist session/set_model into the user's CLI config
   // as the new interactive default (observed 2026-09-03). Put it back on exit.
   // One shared baseline per harness, with a holder list: the FIRST live bridge
@@ -439,12 +446,15 @@ async function daemon() {
   let turn = null;                 // { text, toolCalls, t0, prompt }
   let pendingResolver = null;      // (answerMsg) => void
   let pendingTimer = null;
+  const parkQueue = [];            // parks raised while one is already pending (parallel tool calls)
   const tools = new Map();
 
   function park(kind, summary, onAnswer, onTimeout) {
-    st.pending = { kind, summary, since: nowISO() }; setStatus(`waiting_${kind}`);
-    pendingResolver = (ans) => { clearTimeout(pendingTimer); pendingTimer = null; pendingResolver = null; st.pending = null; setStatus("running"); onAnswer(ans); };
-    pendingTimer = setTimeout(() => { if (pendingResolver) { const r = pendingResolver; pendingResolver = null; st.pending = null; setStatus("running"); log({ event: "park_timeout", kind }); onTimeout(); } }, policy.parkTimeoutMinutes * 60_000);
+    if (pendingResolver) { parkQueue.push([kind, summary, onAnswer, onTimeout]); log({ event: "park_queued", kind, queued: parkQueue.length }); return; }
+    const next = () => { const q = parkQueue.shift(); if (q) park(...q); };
+    st.pending = { kind, summary, since: nowISO(), queued: parkQueue.length }; setStatus(`waiting_${kind}`);
+    pendingResolver = (ans) => { clearTimeout(pendingTimer); pendingTimer = null; pendingResolver = null; st.pending = null; setStatus("running"); onAnswer(ans); next(); };
+    pendingTimer = setTimeout(() => { if (pendingResolver) { pendingResolver = null; st.pending = null; setStatus("running"); log({ event: "park_timeout", kind }); onTimeout(); next(); } }, policy.parkTimeoutMinutes * 60_000);
   }
 
   function onMessage(m, ctx) { try { return onMessageInner(m, ctx); } catch (e) { console.error(`acp-bridge: onMessage error (non-fatal): ${e.message}`); log({ event: "onmessage_error", error: e.message }); } }

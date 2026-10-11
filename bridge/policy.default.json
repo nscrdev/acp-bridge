@@ -1,14 +1,17 @@
 {
-  "_doc": "Permission policy for session/request_permission. Rules are JS regexes tested against the shell command string (kind=execute). Order: deny first, then allow, else park for a human/driver answer. Non-execute tool kinds (read, edit, search, fetch...) are governed by `nonExecute`. A workspace can add <workspace>/.acp-bridge/policy.json; its arrays are appended to these.",
+  "_doc": "Permission policy for session/request_permission. Rules are JS regexes tested against the shell command string (kind=execute). Order: deny first, then allow, else park for a human/driver answer. Non-execute tool kinds (read, edit, search, fetch...) are governed by `nonExecute`. A workspace can add <workspace>/.acp-bridge/policy.json; its arrays are appended to these. Deny rules match at the start of every chained segment (after ; & | ( or a newline), so `echo x & rm y` is denied; allow rules only look at the start of the whole command.",
   "execute": {
     "deny": [
-      "^\\s*(rm|rmdir|del|erase|Remove-Item|rd)\\b",
-      "^\\s*format\\b",
-      "^\\s*(curl|wget|Invoke-WebRequest|iwr|irm)\\b",
+      "(?:^|[;&|(\\n])\\s*(rm|rmdir|del|erase|Remove-Item|rd)\\b",
+      "(?:^|[;&|(\\n])\\s*format\\b",
+      "(?:^|[;&|(\\n])\\s*(curl|wget|Invoke-WebRequest|iwr|irm)\\b",
       "\\|\\s*(sh|bash|pwsh|powershell|iex)\\b",
-      "^\\s*git\\s+(push|reset\\s+--hard|clean|checkout\\s+--\\s*\\.|branch\\s+-D)\\b",
-      "^\\s*(shutdown|Restart-Computer|Stop-Computer|taskkill|Stop-Process)\\b",
-      "^\\s*(sudo|runas)\\b"
+      "\\|\\s*(python[0-9.]*|py|hython|node)(\\.exe)?(\\s+-)?\\s*($|[;&)\\n])",
+      "(?:^|[;&|(\\n])\\s*(python[0-9.]*|py|hython|node)(\\.exe)?\\s+-(\\s|$)",
+      "(?:^|[;&|(\\n])\\s*(python[0-9.]*|py|hython|node)(\\.exe)?\\b[^\\n|;&]*<<",
+      "(?:^|[;&|(\\n])\\s*git\\s+(push|reset\\s+--hard|clean|checkout\\s+--\\s*\\.|branch\\s+-D)\\b",
+      "(?:^|[;&|(\\n])\\s*(shutdown|Restart-Computer|Stop-Computer|taskkill|Stop-Process)\\b",
+      "(?:^|[;&|(\\n])\\s*(sudo|runas)\\b"
     ],
     "allow": [
       "^\\s*(ls|dir|pwd|cat|type|head|tail|wc|echo|hostname|whoami|date|which|where|tree)\\b",
