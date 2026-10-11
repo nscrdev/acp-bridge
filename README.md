@@ -61,7 +61,19 @@ models  [--harness H] [--workspace DIR]
 
 ## Configure
 
-`bridge/harnesses.json` (your copy, git-ignored) defines each backend: the command to spawn, its ACP args, an optional auth method, optional model aliases, and an optional CLI-config path the bridge should snapshot/restore. See `bridge/harnesses.example.json` for the shape and inline notes.
+`bridge/harnesses.json` (your copy, git-ignored) defines each backend: the command to spawn, its ACP args, an optional auth method, optional model aliases, an optional CLI-config path the bridge should snapshot/restore, and an optional `envUnset` list. See `bridge/harnesses.example.json` for the shape and inline notes.
+
+`envUnset` names environment variables the bridge removes before it starts the agent. Matching ignores case. Use it when the agent picks up a setting from the shell that started the bridge and should not.
+
+Example: on Windows, a bridge started from Git Bash passes on `MSYSTEM`, `EXEPATH` and `SHELL`. Cursor CLI then runs its hooks and shell calls in bash. But Cursor writes hook commands in PowerShell syntax, so bash cannot parse them, every hook fails, and Cursor blocks every shell call. Remove the three variables and Cursor uses PowerShell:
+
+```json
+"cursor": {
+  "command": "...",
+  "args": ["..."],
+  "envUnset": ["MSYSTEM", "EXEPATH", "SHELL"]
+}
+```
 
 `bridge/policy.default.json` is the shell-permission policy: `execute.deny` and `execute.allow` are regex lists tested against the command string; anything unmatched parks for the driver to answer. A workspace can extend it with `<workspace>/.acp-bridge/policy.json`.
 
